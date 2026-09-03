@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GOPE Icon Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div>
+        <p class="kicker">GOPE / ICON GENERATOR</p>
+      </div>
+    </header>
+
+    <form id="generator-form" class="form-panel">
+      <div class="field output-field">
+        <span>WoW icon folder</span>
+        <div class="folder-picker">
+          <input id="output-folder" type="text" value="No folder selected" readonly aria-label="Selected output folder">
+          <button type="button" id="folder-button" class="secondary">Choose folder</button>
+        </div>
+        <small class="folder-hint">Usually: ...\World of Warcraft\_retail_\Interface\Icons</small>
+      </div>
+      <div class="field name-field">
+        <span>Icon</span>
+        <div class="name-picker">
+          <input id="icon-name" name="name" type="hidden" required pattern="[a-zA-Z0-9_-]+">
+          <img id="icon-preview" class="icon-preview" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="Selected Wowhead icon">
+          <button type="button" id="wowhead-button" class="secondary">Browse Wowhead <b aria-hidden="true">&#8599;</b></button>
+        </div>
+      </div>
+
+      <label class="field color-field">
+        <span>Hex color</span>
+        <div class="color-input">
+          <input id="color" name="color" type="color" value="#f05a47" aria-label="Choose icon color">
+          <input id="hex" type="text" value="#F05A47" maxlength="7" pattern="#?[0-9a-fA-F]{6}" aria-label="Hex color value" required spellcheck="false">
+        </div>
+      </label>
+
+      <button type="submit" id="generate-button" disabled><span>Generate icon</span><b aria-hidden="true">&#8594;</b></button>
+      <p id="message" class="message" role="status"></p>
+    </form>
+
+    <section class="icon-browser" aria-labelledby="browser-title">
+      <div class="browser-heading">
+        <span id="browser-title">Icon replacements</span>
+        <div class="browser-actions">
+          <button type="button" id="open-folder" class="secondary" disabled>Open folder</button>
+          <button type="button" id="refresh-icons" class="secondary">Refresh</button>
+        </div>
+      </div>
+      <p id="browser-empty" class="browser-empty">Choose a WoW icon folder to browse replacement icons.</p>
+      <div id="icon-list" class="icon-list"></div>
+    </section>
+
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "name": "gope-ability-icon-generator",
+  "version": "1.0.1",
+  "private": true,
+  "description": "A desktop UI for generating GOPE ability icons.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^3.0.2"
+  },
+  "build": {
+    "appId": "com.gope.ability-icon-generator",
+    "productName": "GOPE Ability Icon Generator",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
+    ],
+    "files": [
+      "index.html",
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "styles.css",
+      "wowhead-preload.js",
+      "gope.png",
+      "gope-icon.png",
+      "gope.ico",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      "icon-generator.bat"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "gope.ico"
+    }
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.18.2",
+    "cross-fetch": "^4.1.0",
+    "sharp": "^0.35.4",
+    "tga": "^1.0.7"
+  }
+}
