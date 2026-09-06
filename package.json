@@ -1,6 +1,6 @@
 {
   "name": "gope-ability-icon-generator",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "A desktop UI for generating GOPE ability icons.",
   "main": "main.js",

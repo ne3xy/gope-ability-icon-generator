@@ -309,10 +309,14 @@ ipcMain.handle('open-wowhead', (event) => {
           const match = (field.value || '').trim().match(filenamePattern);
           if (match && match[1].length > 2) return { filename: match[1], imageUrl: null };
         }
+        const iconPathPattern = /[\\/]icons[\\/](?:small|medium|large|tiny)[\\/]([a-z0-9][a-z0-9_-]*)\.(?:png|jpg|jpeg|blp)(?:[?#].*)?/i;
         const imagePattern = /(?:^|[\\\\/"'=])((?:ability|inv|spell|trade_skill|achievement|interface)[a-z0-9_]+?)(?:\\.(?:png|jpg|jpeg|blp))(?:[?#].*)?(?=$|[\\\\/"'&])/i;
         const findFilename = (source) => {
-          const match = String(source || '').match(imagePattern);
-          return match ? match[1] : null;
+          const value = String(source || '');
+          const iconPathMatch = value.match(iconPathPattern);
+          if (iconPathMatch) return iconPathMatch[1];
+          const imageMatch = value.match(imagePattern);
+          return imageMatch ? imageMatch[1] : null;
         };
         const getFullSizeUrl = (source) => {
           const urlMatch = String(source || '').match(/https?:\\/\\/[^\\s"')]+/i);
