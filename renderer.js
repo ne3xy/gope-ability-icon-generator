@@ -13,6 +13,11 @@ const iconList = document.querySelector('#icon-list');
 const browserEmpty = document.querySelector('#browser-empty');
 const refreshIcons = document.querySelector('#refresh-icons');
 const openFolder = document.querySelector('#open-folder');
+const appVersion = document.querySelector('#app-version');
+
+window.iconGenerator.getVersion().then((version) => {
+  appVersion.textContent = `v${version}`;
+});
 
 function updateColorPreview() {
   colorInput.style.backgroundColor = colorInput.value;

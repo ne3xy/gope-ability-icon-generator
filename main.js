@@ -243,6 +243,7 @@ ipcMain.handle('restore-icon', async (_event, { outputDirectory, filename }) => 
 });
 
 ipcMain.handle('get-output-folder', () => readSavedOutputFolder());
+ipcMain.handle('get-version', () => app.getVersion());
 
 ipcMain.handle('open-output-folder', (_event, outputDirectory) => {
   if (!outputDirectory || !fs.existsSync(outputDirectory)) return 'Folder not found.';
