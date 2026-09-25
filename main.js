@@ -14,18 +14,23 @@ const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 let wowheadWindow;
 let wowheadPoll;
 
-function readSavedOutputFolder() {
+function readSettings() {
   try {
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    return settings.outputDirectory && fs.existsSync(settings.outputDirectory) ? settings.outputDirectory : null;
+    return settings && typeof settings === 'object' ? settings : {};
   } catch {
-    return null;
+    return {};
   }
+}
+
+function readSavedOutputFolder() {
+  const settings = readSettings();
+  return settings.outputDirectory && fs.existsSync(settings.outputDirectory) ? settings.outputDirectory : null;
 }
 
 function saveOutputFolder(outputDirectory) {
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(settingsPath, JSON.stringify({ outputDirectory }, null, 2));
+  fs.writeFileSync(settingsPath, JSON.stringify({ ...readSettings(), outputDirectory }, null, 2));
 }
 
 async function findExistingIcon(outputDirectory, filename) {
@@ -39,6 +44,44 @@ function getIconPath(outputDirectory, filename) {
   const directory = path.resolve(outputDirectory);
   const iconPath = path.resolve(directory, filename);
   return path.dirname(iconPath).toLowerCase() === directory.toLowerCase() ? iconPath : null;
+}
+
+function readIconMetadata(outputDirectory) {
+  const directoryKey = path.resolve(outputDirectory).toLowerCase();
+  const metadata = readSettings().iconMetadata?.[directoryKey];
+  return metadata && typeof metadata === 'object' ? metadata : {};
+}
+
+function saveIconMetadata(outputDirectory, filename, metadata) {
+  if (!metadata || typeof metadata !== 'object') return;
+  const spellName = typeof metadata.spellName === 'string' ? metadata.spellName.trim() : '';
+  const npcNames = Array.isArray(metadata.npcNames)
+    ? [...new Set(metadata.npcNames.filter((name) => typeof name === 'string').map((name) => name.trim()).filter(Boolean))]
+    : [];
+  if (!spellName && npcNames.length === 0) return;
+  const settings = readSettings();
+  const directoryKey = path.resolve(outputDirectory).toLowerCase();
+  const allMetadata = settings.iconMetadata?.[directoryKey] || {};
+  settings.iconMetadata = {
+    ...(settings.iconMetadata || {}),
+    [directoryKey]: {
+      ...allMetadata,
+      [filename]: { ...(spellName ? { spellName } : {}), ...(npcNames.length ? { npcNames } : {}) }
+    }
+  };
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+}
+
+function removeIconMetadata(outputDirectory, filename) {
+  const settings = readSettings();
+  const directoryKey = path.resolve(outputDirectory).toLowerCase();
+  const directoryMetadata = settings.iconMetadata?.[directoryKey];
+  if (!directoryMetadata?.[filename]) return;
+  delete directoryMetadata[filename];
+  if (Object.keys(directoryMetadata).length === 0) delete settings.iconMetadata[directoryKey];
+  if (settings.iconMetadata && Object.keys(settings.iconMetadata).length === 0) delete settings.iconMetadata;
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 }
 
 async function findBackup(outputDirectory, filename, backupEntries) {
@@ -136,7 +179,7 @@ function createWindow() {
   window.loadFile('index.html');
 }
 
-ipcMain.handle('generate-icon', async (event, { name, color, outputDirectory }) => {
+ipcMain.handle('generate-icon', async (event, { name, color, outputDirectory, metadata }) => {
   if (!outputDirectory || !fs.existsSync(outputDirectory)) {
     return { ok: false, message: 'Choose an output folder first.' };
   }
@@ -176,6 +219,7 @@ ipcMain.handle('generate-icon', async (event, { name, color, outputDirectory }) 
   process.on('error', (error) => resolve({ ok: false, message: error.message }));
   process.on('close', (code) => {
     if (code === 0) {
+      saveIconMetadata(outputPath, filename, metadata);
       resolve({ ok: true, file: path.join(outputPath, filename) });
     } else {
       resolve({ ok: false, message: output.trim() || `Generator exited with code ${code}.` });
@@ -194,8 +238,18 @@ ipcMain.handle('choose-output-folder', (event) => dialog.showOpenDialog(BrowserW
   return filePaths[0];
 }));
 
+ipcMain.handle('save-icon-metadata', (_event, { outputDirectory, filename, metadata }) => {
+  const iconPath = getIconPath(outputDirectory, filename);
+  if (!iconPath || !fs.existsSync(iconPath) || fs.statSync(iconPath).size !== 22) {
+    return { ok: false, message: 'Icon not found.' };
+  }
+  saveIconMetadata(outputDirectory, filename, metadata);
+  return { ok: true };
+});
+
 ipcMain.handle('list-icons', async (_event, outputDirectory) => {
   if (!outputDirectory) return [];
+  const iconMetadata = readIconMetadata(outputDirectory);
   const directoryEntries = await fs.promises.readdir(outputDirectory, { withFileTypes: true }).catch(() => []);
   const backupEntries = await fs.promises.readdir(path.join(outputDirectory, 'backups'), { withFileTypes: true }).catch(() => []);
   const files = (await Promise.all(directoryEntries
@@ -217,6 +271,7 @@ ipcMain.handle('list-icons', async (_event, outputDirectory) => {
     if (!backupUrl) backupUrl = defaultIconUrl;
     return {
       filename: icon.filename,
+      ...(iconMetadata[icon.filename] || {}),
       iconUrl: await replacementPreview(icon.filePath),
       backupUrl: backupUrl?.dataUrl || backupUrl,
       hasBackup: Boolean(icon.backupPath)
@@ -228,6 +283,7 @@ ipcMain.handle('delete-icon', (_event, { outputDirectory, filename }) => {
   const iconPath = getIconPath(outputDirectory, filename);
   if (!iconPath || !fs.existsSync(iconPath) || fs.statSync(iconPath).size !== 22) return { ok: false, message: 'Icon not found.' };
   fs.unlinkSync(iconPath);
+  removeIconMetadata(outputDirectory, filename);
   return { ok: true };
 });
 
@@ -273,8 +329,12 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-ipcMain.handle('open-wowhead', (event) => {
+ipcMain.handle('open-wowhead', (event, url) => {
+  const wowheadUrl = typeof url === 'string' && /^https:\/\/www\.wowhead\.com\//i.test(url)
+    ? url
+    : 'https://www.wowhead.com/';
   if (wowheadWindow && !wowheadWindow.isDestroyed()) {
+    if (typeof url === 'string') wowheadWindow.loadURL(wowheadUrl);
     wowheadWindow.focus();
     return;
   }
@@ -294,7 +354,7 @@ ipcMain.handle('open-wowhead', (event) => {
   wowheadWindow.webContents.on('before-input-event', (_event, input) => {
     if (input.type === 'keyDown' && input.key === 'Escape') wowheadWindow.close();
   });
-  wowheadWindow.loadURL('https://www.wowhead.com/');
+  wowheadWindow.loadURL(wowheadUrl);
   wowheadWindow.webContents.on('did-finish-load', () => installWowheadNavigation(wowheadWindow));
   const owner = BrowserWindow.fromWebContents(event.sender);
   let lastPage = '';
@@ -306,9 +366,13 @@ ipcMain.handle('open-wowhead', (event) => {
         const filenamePattern = /(?:^|[\\\\/])?((?:ability|inv|spell|trade_skill|achievement|interface)[^\\\\/]*?)(?:\\.(?:tga|blp|png|jpg|jpeg))?(?:[?#].*)?$/i;
         const pageIsSpell = /^\\/spell(?:[=/?]|$)/i.test(window.location.pathname);
         if (!pageIsSpell) return null;
+        const spellName = document.querySelector('h1')?.textContent?.trim() || null;
+        const npcNames = [...new Set([...document.querySelectorAll('a[href*="/npc="]')]
+          .map((link) => link.textContent.trim())
+          .filter(Boolean))];
         for (const field of document.querySelectorAll('input, textarea')) {
           const match = (field.value || '').trim().match(filenamePattern);
-          if (match && match[1].length > 2) return { filename: match[1], imageUrl: null };
+          if (match && match[1].length > 2) return { filename: match[1], imageUrl: null, spellName, npcNames };
         }
         const iconPathPattern = /[\\/]icons[\\/](?:small|medium|large|tiny)[\\/]([a-z0-9][a-z0-9_-]*)\.(?:png|jpg|jpeg|blp)(?:[?#].*)?/i;
         const imagePattern = /(?:^|[\\\\/"'=])((?:ability|inv|spell|trade_skill|achievement|interface)[a-z0-9_]+?)(?:\\.(?:png|jpg|jpeg|blp))(?:[?#].*)?(?=$|[\\\\/"'&])/i;
@@ -334,13 +398,13 @@ ipcMain.handle('open-wowhead', (event) => {
             const filename = findFilename(source);
             if (filename) {
               const imageUrl = getFullSizeUrl(source);
-              return { filename, imageUrl };
+              return { filename, imageUrl, spellName, npcNames };
             }
           }
         }
         const htmlFilename = findFilename(document.documentElement.innerHTML);
         if (htmlFilename) {
-          return { filename: htmlFilename, imageUrl: null };
+          return { filename: htmlFilename, imageUrl: null, spellName, npcNames };
         }
         return null;
       })();
@@ -356,7 +420,12 @@ ipcMain.handle('open-wowhead', (event) => {
       if (response === 0 && !owner.isDestroyed()) {
         let icon = null;
         try { icon = await prepareIcon(result.imageUrl); } catch (error) { console.warn(`Could not process Wowhead icon: ${error.message}`); }
-        event.sender.send('wowhead-icon-selected', { filename: result.filename, ...icon });
+        event.sender.send('wowhead-icon-selected', {
+          filename: result.filename,
+          spellName: result.spellName,
+          npcNames: result.npcNames,
+          ...icon
+        });
       }
       if (response === 0) {
         if (!owner.isDestroyed()) owner.focus();

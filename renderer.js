@@ -14,6 +14,8 @@ const browserEmpty = document.querySelector('#browser-empty');
 const refreshIcons = document.querySelector('#refresh-icons');
 const openFolder = document.querySelector('#open-folder');
 const appVersion = document.querySelector('#app-version');
+let selectedIconMetadata = null;
+let metadataTargetFilename = null;
 
 window.iconGenerator.getVersion().then((version) => {
   appVersion.textContent = `v${version}`;
@@ -33,8 +35,22 @@ async function loadIconList() {
     const row = document.createElement('div');
     row.className = 'icon-row';
     row.dataset.filename = icon.filename;
-    row.innerHTML = `<div class="icon-files"><img src="${icon.iconUrl}" alt="Current ${icon.filename}">${icon.backupUrl ? `<img class="backup-file" src="${icon.backupUrl}" alt="Backup ${icon.filename}">` : ''}</div><code>${icon.filename}</code><span class="icon-actions"></span>`;
+    const details = [icon.spellName, icon.npcNames?.length ? `Used by: ${icon.npcNames.join(', ')}` : ''].filter(Boolean).join(' | ');
+    row.innerHTML = `<div class="icon-files"><img src="${icon.iconUrl}" alt="Current ${icon.filename}">${icon.backupUrl ? `<img class="backup-file" src="${icon.backupUrl}" alt="Backup ${icon.filename}">` : ''}</div><div class="icon-info"><code>${icon.filename}</code>${details ? `<small>${details}</small>` : ''}</div><span class="icon-actions"></span>`;
     const actions = row.querySelector('.icon-actions');
+    if (!icon.spellName && !icon.npcNames?.length) {
+      const findMetadata = document.createElement('button');
+      findMetadata.className = 'secondary';
+      findMetadata.textContent = 'Find metadata';
+      findMetadata.addEventListener('click', () => {
+        metadataTargetFilename = icon.filename;
+        const query = icon.filename.replace(/\.tga$/i, '');
+        window.iconGenerator.openWowhead(`https://www.wowhead.com/spells?filter=15;0;${encodeURIComponent(query)}`);
+        message.className = 'message working';
+        message.textContent = `Find the spell page for ${icon.filename} on Wowhead...`;
+      });
+      actions.appendChild(findMetadata);
+    }
     if (icon.hasBackup) {
       const restore = document.createElement('button');
       restore.className = 'secondary';
@@ -59,20 +75,22 @@ async function loadIconList() {
       });
       actions.appendChild(restore);
     }
-    const remove = document.createElement('button');
-    remove.className = 'danger';
-    remove.textContent = 'Delete';
-    remove.addEventListener('click', async () => {
-      if (!window.confirm(`Delete ${icon.filename}?`)) return;
-      row.remove();
-      message.className = 'message working';
-      message.textContent = `Deleting ${icon.filename}...`;
-      const result = await window.iconGenerator.deleteIcon({ outputDirectory, filename: icon.filename });
-      message.className = result.ok ? 'message success' : 'message error';
-      message.textContent = result.ok ? `Deleted ${icon.filename}` : result.message;
-      refreshIconList();
-    });
-    actions.appendChild(remove);
+    if (!icon.hasBackup) {
+      const remove = document.createElement('button');
+      remove.className = 'danger';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', async () => {
+        if (!window.confirm(`Delete ${icon.filename}?`)) return;
+        row.remove();
+        message.className = 'message working';
+        message.textContent = `Deleting ${icon.filename}...`;
+        const result = await window.iconGenerator.deleteIcon({ outputDirectory, filename: icon.filename });
+        message.className = result.ok ? 'message success' : 'message error';
+        message.textContent = result.ok ? `Deleted ${icon.filename}` : result.message;
+        refreshIconList();
+      });
+      actions.appendChild(remove);
+    }
     iconList.appendChild(row);
   }
 }
@@ -93,7 +111,7 @@ function addPendingIcon(filename, color, referenceIconUrl) {
   const preview = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="${color}"/></svg>`)}`;
   const referenceUrl = existingBackupUrl || referenceIconUrl;
   const referenceImage = referenceUrl ? `<img class="backup-file" src="${referenceUrl}" alt="Default ${filename}">` : '';
-  row.innerHTML = `<div class="icon-files"><img src="${preview}" alt="Current ${filename}">${referenceImage}</div><code>${filename}</code><span class="icon-actions"></span>`;
+  row.innerHTML = `<div class="icon-files"><img src="${preview}" alt="Current ${filename}">${referenceImage}</div><div class="icon-info"><code>${filename}</code></div><span class="icon-actions"></span>`;
   const remove = document.createElement('button');
   remove.className = 'danger';
   remove.textContent = 'Delete';
@@ -151,6 +169,24 @@ wowheadButton.addEventListener('click', () => {
 });
 
 window.iconGenerator.onWowheadIconSelected((icon) => {
+  if (metadataTargetFilename) {
+    const filename = metadataTargetFilename;
+    metadataTargetFilename = null;
+    window.iconGenerator.saveIconMetadata({
+      outputDirectory,
+      filename,
+      metadata: { spellName: icon.spellName, npcNames: icon.npcNames }
+    }).then((result) => {
+      message.className = result.ok ? 'message success' : 'message error';
+      message.textContent = result.ok ? `Saved metadata for ${filename}` : result.message;
+      if (result.ok) refreshIconList();
+    });
+    return;
+  }
+  selectedIconMetadata = {
+    spellName: icon.spellName,
+    npcNames: icon.npcNames
+  };
   nameInput.value = icon.filename;
   if (icon.averageColor) {
     colorInput.value = icon.averageColor.toLowerCase();
@@ -188,7 +224,8 @@ form.addEventListener('submit', async (event) => {
   const result = await window.iconGenerator.generate({
     name: nameInput.value.trim(),
     color: hexInput.value.trim(),
-    outputDirectory
+    outputDirectory,
+    metadata: selectedIconMetadata
   });
 
   button.disabled = false;
@@ -196,6 +233,7 @@ form.addEventListener('submit', async (event) => {
     message.className = 'message success';
     message.textContent = `Created ${nameInput.value.trim()}.tga`;
     addPendingIcon(`${nameInput.value.trim()}.tga`, colorInput.value, iconPreview.src);
+    selectedIconMetadata = null;
     refreshIconList();
   } else {
     message.className = 'message error';
